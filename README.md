@@ -5,12 +5,14 @@
 
 Install following tools and setup in your path (except picard.jar):
 
-bowtie2: https://github.com/BenLangmead/bowtie2\n
+bowtie2: https://github.com/BenLangmead/bowtie2
 
 MACS2: https://pypi.org/project/MACS2/
 
 PICARD: https://broadinstitute.github.io/picard/
-samtools: http://www.htslib.org/download/
+
+samtools: http://www.htslib.org/download/ 
+
 docopt: https://github.com/docopt/docopt
 
 
