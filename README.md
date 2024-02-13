@@ -1,8 +1,8 @@
 # chrom-seq
 
-**
-Python pipeline for ATAC-seq and ChIP-seq analysis
-**
+
+**Python pipeline for ATAC-seq and ChIP-seq analysis**
+
 Install following tools and setup in your path (except picard.jar):
 
 bowtie2: https://github.com/BenLangmead/bowtie2
@@ -16,8 +16,8 @@ docopt: https://github.com/docopt/docopt
 
 chrom-seq.py -h 
 
-**example:
-**
+**example:**
+
 chrom-seq.py align-pe sample_read1.fastq.gz sample_read2.fastq.gz ~/Desktop/ref/Bowtie2Index -t 3 -o test.bam
 
 chrom-seq.py dedup-shift test_sorted.bam ~/Desktop/tools/ -t 6 --atac
