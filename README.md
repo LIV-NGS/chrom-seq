@@ -5,7 +5,7 @@
 
 Install following tools and setup in your path (except picard.jar):
 
-bowtie2: https://github.com/BenLangmead/bowtie2
+bowtie2: https://sourceforge.net/projects/bowtie-bio/files/bowtie2/2.5.3/
 
 MACS2: https://pypi.org/project/MACS2/
 
