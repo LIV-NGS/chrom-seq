@@ -1,0 +1,346 @@
+---
+title: "ATAC_DE_report"
+author: "Dr. S. Virdi"
+date: "..."
+output:  
+  html_document:
+    toc: true
+---
+<style type="text/css">
+.main-container {
+  max-width: 1800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ChIPQC)
+library(rtracklayer)
+library(DT)
+library(dplyr)
+library(tidyr)
+library(soGGi)
+library(biomaRt)
+library(genomation)
+library(tidyr)
+library(Rsubread)
+library(limma)
+library(eulerr)
+library(DESeq2)
+library(GenomicFeatures)
+library(Rsubread)
+library(ChIPseeker)
+library(GO.db)
+library(clusterProfiler)
+library(pheatmap)
+library(gridExtra)
+library(stringr)
+library(ggrepel)
+library(org.Hs.eg.db)
+library(magick)
+library(png)
+library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+library(sessioninfo)
+library(GenomicRanges)
+library(magrittr)
+library(eulerr)
+library(gridExtra)
+library(ggplot2)
+library(Rsubread)
+library(ggrepel)
+library(dplyr)
+library(tidyr)
+library(DESeq2)
+library(pheatmap)
+```
+## Analysis  {.tabset}
+
+### Initialization
+Importing ENSEMBL annotations and salmon transcript counts
+```{r, echo=FALSE}
+
+### How to run rmarkdown::render("ATAC_DE2.Rmd",output_dir = "...")
+
+peaks_dir <- "/Users/sanamjeet/Desktop/work_hpi/hpi_projects/ATACseq/u_lange/diff_atac/peaks"
+BAM_dir <- "/Users/sanamjeet/Desktop/work_hpi/hpi_projects/ATACseq/u_lange/diff_atac/BAMs"
+fasta <- '/Volumes/data_external_1tb/Ref/h_sapiens/Homo_sapiens.GRCh38.dna.primary_assembly.fa'
+gtf <- '/Volumes/data_external_1tb/Ref/h_sapiens/gencode.v43.annotation.gtf'
+out_dir <- "/Users/sanamjeet/Desktop/work_hpi/hpi_projects/ATACseq/u_lange/diff_atac/peaks/test"
+old_path <- Sys.getenv("PATH")
+Sys.setenv(PATH = paste(old_path, "...", sep = ":"))
+
+bamsToCount <- dir(BAM_dir, full.names = TRUE, pattern = "*.\\.bam$")
+
+#############################################
+ct_bam <- bamsToCount[c(1,2,5)]
+sm_bam <- bamsToCount[c(3,4,6)]
+##############################################
+
+
+################################## 
+peaks <- list.files(peaks_dir)
+peaks_names <- gsub(".narrowPeak","",peaks)
+peaks <- paste0(peaks_dir,"/",peaks)
+names(peaks) <- peaks_names
+
+sm <- peaks[c(3,4,6)]
+ct <- peaks[c(1,2,5)]
+
+C1  <- lapply(c(ct,sm), ChIPQC:::GetGRanges, simple = TRUE)
+C1 <- lapply(C1, function(x) unique(x))
+names(C1) <- c(names(ct),names(sm))
+
+
+peaks_consensus <- soGGi:::runConsensusRegions(GRangesList(C1), "none")
+peakwidths <- width(peaks_consensus)
+peaks_consensus <- peaks_consensus[peakwidths  < 10000 & peakwidths > 20]
+
+p1 <- data.frame(elementMetadata(peaks_consensus)) %>% 
+  dplyr::select(contains(names(ct))) %>%  euler() %>% plot(quantities = TRUE)
+
+p2 <- data.frame(elementMetadata(peaks_consensus)) %>% 
+  dplyr::select(contains(names(sm))) %>%  euler() %>% plot(quantities = TRUE)
+
+do.call("grid.arrange", c(list(p1,p2), ncol=1))
+
+
+
+occurrences <- elementMetadata(peaks_consensus) %>% as.data.frame %>% dplyr::select(-consensusIDs) %>% 
+  rowSums
+table(occurrences) %>% rev %>% cumsum
+peaks_consensus <- peaks_consensus[occurrences >= 3, ]
+
+######################### Extract comparison sepcific peaks from all consensus peaks
+
+x <- findOverlaps(peaks_consensus,all_consensus)
+x <- data.frame(x)
+#all_consensus[x$subjectHits,]
+
+peaks_consensus2 <- all_consensus[x$subjectHits,]
+
+peaks_rows <- data.frame(GeneID = paste("ID", seqnames(peaks_consensus2), 
+                                            start(peaks_consensus2), end(peaks_consensus2), sep = "_"), Chr = seqnames(peaks_consensus), 
+                             Start = start(peaks_consensus), End = end(peaks_consensus), Strand = strand(peaks_consensus))
+saveRDS(peaks_rows, paste0(out_dir,"/peaks_consensus.rds"))
+
+
+```
+
+### Normalization and PCA 
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+
+PCA <- as.data.frame(elementMetadata(peaks_consensus)) %>% dplyr::select(-consensusIDs) %>% 
+  as.matrix %>% t %>% prcomp 
+percentVar <- round(100*PCA$sdev^2/sum(PCA$sdev^2),1)
+
+
+PCA %>% .$x %>% data.frame %>% mutate(Samples = rownames(.)) %>% 
+  mutate(Group = factor(c(rep("ct",length(ct)),rep("sm",length(sm))))) %>% 
+  ggplot(aes(x = PC1, y = PC2 ,colour = Group, label=Samples)) + geom_point(size = 5) + 
+  theme(aspect.ratio = 1) + 
+  geom_text_repel(aes(label=Samples),size=2.7, max.overlaps = Inf,colour="black",fontface = "bold.italic") +
+  xlab(paste0("PC1, VarExp:", round(round(100*PCA$sdev^2/sum(PCA$sdev^2),1)[1],4))) + 
+  ylab(paste0("PC2, VarExp:", round(round(100*PCA$sdev^2/sum(PCA$sdev^2),1)[2],4))) 
+
+
+fcResults <- featureCounts(c(ct_bam,sm_bam), annot.ext = peaks_rows, isPairedEnd = TRUE, 
+                           countMultiMappingReads = FALSE)
+myCounts <- fcResults$counts
+colnames(myCounts) <- gsub("_2_secondsort_shifted.bam","",basename(bamsToCount))
+
+########
+########
+########
+
+Group  <- factor(c(rep("CT",length(ct)),rep("SM",length(sm)))) 
+
+metaData <- data.frame(Group, row.names = colnames(myCounts))
+
+atacDDS <- DESeqDataSetFromMatrix(myCounts, metaData, ~Group)
+atacDDS <- estimateSizeFactors(atacDDS, type="ratio")
+atac_vsn <- varianceStabilizingTransformation(atacDDS, blind = TRUE)
+
+#tiff("PCA.tiff", width = 600, height = 600, units = "px", res = 80)
+plotPCA(atac_vsn, intgroup = "Group", ntop = nrow(atac_vsn)) & theme(aspect.ratio = 1)   & geom_text_repel(aes(label=name),vjust=2)
+#dev.off()
+
+atacDDS <- estimateDispersions(atacDDS)
+atacDDS <-  nbinomWaldTest(atacDDS)
+
+SF<-data.frame(t(sizeFactors(atacDDS)))
+
+DESeq2Res <- results(atacDDS, pAdjustMethod = "BH")
+ table(DESeq2Res$padj < 0.05)
+
+####################################
+p_adj <- 0.001                   ###
+lfc <- 2                         ###
+####################################
+
+sigGenes<-data.frame(subset(DESeq2Res, padj < p_adj & abs(log2FoldChange) > lfc))
+
+
+sig_peaks <- peaks_rows[peaks_rows$GeneID %in% rownames(sigGenes),]
+
+write.table(sig_peaks[,c(2,3,4,1)], paste0(out_dir,"/","sigPeaks.bed"), sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
+
+##############################################
+##############################################
+
+```
+
+
+### DE Analysis
+```{r,echo=FALSE, message = FALSE, warning = FALSE}
+## apply transformation to the data
+atac_vsn <- data.frame(assay(atac_vsn))
+
+pheatmap(atac_vsn[rownames(sigGenes),],scale = "row",clustering_distance_rows="correlation", show_rownames = FALSE, cluster_cols = FALSE,treeheight_row = 0)
+
+##Volcano DE
+DESeq2Res_plot <- data.frame(DESeq2Res)
+DESeq2Res_plot$diffexpressed <- "NO"
+DESeq2Res_plot$diffexpressed[DESeq2Res_plot$log2FoldChange > lfc & DESeq2Res_plot$padj < p_adj] <- "UP"
+DESeq2Res_plot$diffexpressed[DESeq2Res_plot$log2FoldChange < -lfc & DESeq2Res_plot$padj < p_adj] <- "DOWN"
+
+
+
+print(ggplot(DESeq2Res_plot, aes(x=log2FoldChange, y=-log10(padj), col=diffexpressed)) +
+  geom_point(size=0.2) + scale_color_manual(values=c("blue", "black", "red")) +
+  theme(panel.background = element_rect(fill="white"),
+        axis.line = element_line(colour = "black", size = 0.0),
+        panel.grid.minor = element_line(color="grey",size = 0.1),
+        panel.grid.major = element_line(color="grey",size = 0.1),
+        axis.ticks = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, size=0.2), aspect.ratio = 1)) 
+
+
+## annotate peaks with homer
+annotate <- paste0('annotatePeaks.pl ',out_dir,'/sigPeaks.bed ', fasta,' -gtf ', gtf,' > ',out_dir,'/sig_anno.table')
+system(annotate)
+
+
+DT_sig_genes_names<-read.table(paste0(out_dir,'/sig_anno.table'), header = TRUE, sep = "\t")
+
+###
+###
+DT_sig_genes_names$Start <- DT_sig_genes_names$Start - 1
+DT_sig_genes_names$peak <- paste("peak",DT_sig_genes_names$Chr,DT_sig_genes_names$Start,DT_sig_genes_names$End,sep="_")
+DT_sig_genes_names <- DT_sig_genes_names %>% dplyr::select("Chr","Start","End","Annotation","Distance.to.TSS", "Nearest.PromoterID","Entrez.ID","peak")
+
+sig_peaks$peak <- paste("peak",sig_peaks$Chr,sig_peaks$Start,sig_peaks$End,sep="_")
+sigGenes$GeneID <- rownames(sigGenes)
+DT_sig_genes_names <- merge(sig_peaks,DT_sig_genes_names,by="peak")
+
+DT_sig_genes_names <- merge(sigGenes,DT_sig_genes_names,by="GeneID")
+
+DT_sig_genes_names$Entrez.ID <- gsub("gene:","",DT_sig_genes_names$Entrez.ID)
+DT_sig_genes_names <- DT_sig_genes_names %>% dplyr::select("GeneID","peak","Chr.x","Start.x","End.x","baseMean","log2FoldChange" , "padj", "Annotation","Distance.to.TSS","Distance.to.TSS", "Nearest.PromoterID","Entrez.ID")
+sig_genes_names <- DT_sig_genes_names
+###
+###
+
+##DT_sig_genes_names$Start <- DT_sig_genes_names$Start - 1
+##DT_sig_genes_names$peak <- paste("ID",DT_sig_genes_names$Chr,DT_sig_genes_names$Start,DT_sig_genes_names$End,sep="_")
+##DT_sig_genes_names <- DT_sig_genes_names %>% dplyr::select("Chr","Start","End","Annotation","Distance.to.TSS", "Nearest.PromoterID","Entrez.ID","peak")
+
+##sigGenes$GeneID <- rownames(sigGenes)
+D##T_sig_genes_names <- merge(sigGenes,DT_sig_genes_names,by.x="GeneID",by.y="peak")
+
+
+##sig_genes_names <- DT_sig_genes_names
+
+DT_sig_genes_names$ensembl_id <-paste0('<a href="',"http://www.ensembl.org/","Homo_sapiens","/Gene/Summary?db=core;g=",DT_sig_genes_names$Entrez.ID,'">',DT_sig_genes_names$Entrez.ID,"</a>")
+DT_sig_genes_names$Entrez.ID <- NULL
+sig_genes_names$ensembl_id  <- sig_genes_names$Entrez.ID
+sig_genes_names$Entrez.ID <- NULL
+
+datatable(DT_sig_genes_names,extensions = 'Buttons', filter = 'top', options = list(pageLength = 100, scrollX = TRUE, scrollY = "800px", autoWidth = TRUE, dom = 'Bfrtip',
+    buttons = 
+      list('copy', 'print', list(
+        extend = 'collection',
+        buttons = c('csv', 'excel'),
+        text = 'Download'
+      ))), escape = FALSE)
+
+
+```
+
+
+### GO_plots
+```{r,echo=FALSE, message = FALSE, warning = FALSE}
+
+## merge ensembl ids with entrez ids 
+allgenes_names <- merge(sig_genes_names, AnnotationDbi::select(org.Hs.eg.db,              
+                  keys=as.vector(sig_genes_names$ensembl_id),
+                  columns=c("SYMBOL","ENTREZID"), keytype="ENSEMBL"),
+                  by.x="ensembl_id",by.y="ENSEMBL")
+
+
+
+CP_res <-enrichGO(gene = as.vector(allgenes_names$ENTREZID),
+         OrgDb         = "org.Hs.eg.db",
+         ont           = "BP",
+         pAdjustMethod = "BH",
+         pvalueCutoff  = 0.05,
+         qvalueCutoff  = 0.2,
+         readable      = TRUE)
+
+## ploy GO terms
+tiff(paste0(out_dir,"/GO_clusterprofiler.tiff"), units="cm", width=20, height=32, res=90)
+clusterProfiler::dotplot(CP_res,showCategory= 30,font.size=7)
+dev.off()
+
+
+txdb <- makeTxDbFromGFF(gtf,
+                        format=c("auto", "gff3", "gtf"))
+
+txdb <- TxDb.Hsapiens.UCSC.hg38.knownGene
+promoter <- getPromoters(TxDb=txdb, upstream=1000, downstream=1000)
+
+
+x_granges <- GenomicRanges::makeGRangesFromDataFrame(sig_peaks[,c(2,3,4)])
+anno_peak <- annotatePeak(x_granges,TxDb = txdb,tssRegion=c(-2000, 2000), verbose=FALSE)
+plotAnnoPie(anno_peak) 
+
+datatable(CP_res@result,extensions = 'Buttons', filter = 'top', options = list(pageLength = 100, scrollX = TRUE, scrollY = "800px", autoWidth = TRUE, dom = 'Bfrtip',
+                                                                                    buttons = 
+                                                                                        list('copy', 'print', list(
+                                                                                            extend = 'collection',
+                                                                                            buttons = c('csv', 'excel'),
+                                                                                            text = 'Download'
+                                                                                        ))), escape = FALSE)
+
+
+
+```
+
+
+### Peak Heatmap
+```{r,echo=FALSE, message = FALSE, warning = FALSE}
+ct_bw <- gsub(".bam",".bw",ct_bam)
+sm_bw <- gsub(".bam",".bw",sm_bam)
+
+
+## Run deeptools computematrix and plot heatmap
+hm <- paste0('computeMatrix reference-point -S ',paste(c(ct_bw,sm_bw),collapse = " "),'  -R ',paste0(out_dir,"/","sigPeaks.bed"),' --referencePoint center -a 1000 -b 1000 -p 5 -out cp.mat.gz --skipZeros')
+
+system(hm)
+
+hm2 <- paste0('plotHeatmap -m cp.mat.gz -out ',out_dir,'/cp.png --kmeans 4 --samplesLabel ',paste(c(rep("CT",length(ct)),rep("CONDITION",length(sm))),collapse =" "))
+system(hm2)
+
+
+filename <- paste0(out_dir,'/cp.png')
+print(image_read(filename))
+
+```
+
+
+### Report information
+```{r,echo=FALSE, message = FALSE, warning = FALSE}
+sessioninfo::session_info(pkgs = c("attached")[1], dependencies = "NO")
+```
+
