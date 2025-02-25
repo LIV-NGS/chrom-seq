@@ -66,9 +66,9 @@ def dir_names(homdir, *args):
         sys.exit(-1)
 
 
-########################
-# ALIGN READS WITH BWA #
-########################
+###########################
+# ALIGN READS WITH Bowtie #
+###########################
 
 
 def align(fq1, fq2, ref, th, bamfile):
