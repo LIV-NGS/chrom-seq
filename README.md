@@ -33,3 +33,25 @@ chrom-seq.py dedup-shift test_sorted.bam ~/Desktop/tools/ -t 6 --atac
 
 chrom-seq.py call-peaks test_sorted_dedup.bam test peaks --atac
 ```
+________________________________________________________________________________________________
+
+**Differential ATAC-seq report**
+R markdown document to creat html reports for Differential ATAC-seq.
+
+Following are the steps to use the R markdown script.
+
+Install following tools and setup in your path (except picard.jar):
+
+deeptools: https://deeptools.readthedocs.io/en/latest/
+
+HOMER (annotatePeaks.pl): http://homer.ucsd.edu/homer/ngs/annotation.html
+
+Type echo $PATH in your terminal and initialize path at the start of the script:
+
+
+```
+### Replace "..."  with output of echo $PATH
+Sys.setenv(PATH = paste(old_path, "...", sep = ":")) 
+###Run
+rmarkdown::render("PATH-to-the-rmd-script",output_dir = "full_path_to_output_dir")
+```
