@@ -63,11 +63,11 @@ Importing ENSEMBL annotations and salmon transcript counts
 
 ### How to run rmarkdown::render("ATAC_DE2.Rmd",output_dir = "...")
 
-peaks_dir <- "/Users/sanamjeet/Desktop/work_hpi/hpi_projects/ATACseq/u_lange/diff_atac/peaks"
-BAM_dir <- "/Users/sanamjeet/Desktop/work_hpi/hpi_projects/ATACseq/u_lange/diff_atac/BAMs"
-fasta <- '/Volumes/data_external_1tb/Ref/h_sapiens/Homo_sapiens.GRCh38.dna.primary_assembly.fa'
-gtf <- '/Volumes/data_external_1tb/Ref/h_sapiens/gencode.v43.annotation.gtf'
-out_dir <- "/Users/sanamjeet/Desktop/work_hpi/hpi_projects/ATACseq/u_lange/diff_atac/peaks/test"
+peaks_dir <- .../peaks"
+BAM_dir <- ".../BAMs"
+fasta <- '.../Homo_sapiens.GRCh38.dna.primary_assembly.fa'
+gtf <- '.../gencode.v43.annotation.gtf'
+out_dir <- ".../test"
 old_path <- Sys.getenv("PATH")
 Sys.setenv(PATH = paste(old_path, "...", sep = ":"))
 
