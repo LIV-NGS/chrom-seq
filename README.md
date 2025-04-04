@@ -47,7 +47,9 @@ deeptools: https://deeptools.readthedocs.io/en/latest/
 
 HOMER (annotatePeaks.pl): http://homer.ucsd.edu/homer/ngs/annotation.html
 
-Type echo $PATH in your terminal and initialize path at the start of the script:
+Type echo $PATH in your terminal and initialize path at the start of the script (install all the packages too):
+
+1. https://github.com/ColeWunderlich/soGGi
 
 
 ```
